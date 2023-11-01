@@ -1,0 +1,426 @@
+From 21d5e92b26cc9b90b522ef7dd03e5cf09167f1cc Mon Sep 17 00:00:00 2001
+From: Artem Savkov <asavkov@redhat.com>
+Date: Tue, 22 Sep 2020 15:48:56 +0200
+Subject: [RHEL8.2 KPATCH v2] [net] packet: make tp_drops atomic
+
+Kernels:
+4.18.0-193.el8
+4.18.0-193.1.2.el8_2
+4.18.0-193.6.3.el8_2
+4.18.0-193.13.2.el8_2
+4.18.0-193.14.3.el8_2
+4.18.0-193.19.1.el8_2
+
+Changes since last build:
+[x86_64]:
+af_packet.o: changed function: packet_create
+af_packet.o: changed function: packet_getsockopt
+af_packet.o: changed function: packet_rcv
+af_packet.o: changed function: packet_sock_destruct
+af_packet.o: changed function: prb_retire_current_block
+af_packet.o: changed function: tpacket_rcv
+
+[ppc64le]:
+af_packet.o: changed function: packet_create
+af_packet.o: changed function: packet_getsockopt
+af_packet.o: changed function: packet_rcv
+af_packet.o: changed function: packet_sock_destruct
+af_packet.o: changed function: prb_retire_current_block
+af_packet.o: changed function: run_filter
+af_packet.o: changed function: tpacket_rcv
+
+---------------------------
+
+Modifications:
+ - bpf calls altered to avoid issues with jump labels
+ - tp_drops as shadow variable
+
+Testing: reproducer from bz
+
+commit 1513be1efa2a836cb0f4309fcf1956df3faad34c
+Author: Hangbin Liu <haliu@redhat.com>
+Date:   Fri Sep 11 04:19:13 2020 -0400
+
+    [net] packet: fix overflow in tpacket_rcv
+
+    Message-id: <20200911041913.2808606-3-haliu@redhat.com>
+    Patchwork-id: 326146
+    Patchwork-instance: patchwork
+    O-Subject: [CVE-2020-14386 RHEL8.3 net PATCH 2/2] net/packet: fix overflow in tpacket_rcv
+    Bugzilla: 1876224
+    Z-Bugzilla: 1876223
+    CVE: CVE-2020-14386
+    RH-Acked-by: Davide Caratti <dcaratti@redhat.com>
+    RH-Acked-by: Marcelo Leitner <mleitner@redhat.com>
+    RH-Acked-by: Jarod Wilson <jarod@redhat.com>
+    RH-Acked-by: Paolo Abeni <pabeni@redhat.com>
+    RH-Acked-by: Ivan Vecera <ivecera@redhat.com>
+
+    Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1876224
+    Brew: https://brewweb.devel.redhat.com/taskinfo?taskID=31276277
+    Upstream Status: net.git commit acf69c946233
+    CVE: CVE-2020-14386
+
+    commit acf69c946233259ab4d64f8869d4037a198c7f06
+    Author: Or Cohen <orcohen@paloaltonetworks.com>
+    Date:   Thu Sep 3 21:05:28 2020 -0700
+
+        net/packet: fix overflow in tpacket_rcv
+
+        Using tp_reserve to calculate netoff can overflow as
+        tp_reserve is unsigned int and netoff is unsigned short.
+
+        This may lead to macoff receving a smaller value then
+        sizeof(struct virtio_net_hdr), and if po->has_vnet_hdr
+        is set, an out-of-bounds write will occur when
+        calling virtio_net_hdr_from_skb.
+
+        The bug is fixed by converting netoff to unsigned int
+        and checking if it exceeds USHRT_MAX.
+
+        This addresses CVE-2020-14386
+
+        Fixes: 8913336a7e8d ("packet: add PACKET_RESERVE sockopt")
+        Signed-off-by: Or Cohen <orcohen@paloaltonetworks.com>
+        Signed-off-by: Eric Dumazet <edumazet@google.com>
+        Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+
+    Signed-off-by: Hangbin Liu <haliu@redhat.com>
+    Signed-off-by: Timothy Redaelli <tredaelli@redhat.com>
+    Signed-off-by: Bruno Meneguele <bmeneg@redhat.com>
+
+commit 5d07c2093eec0b75b60f6087a6c1b1f79c46e20c
+Author: Hangbin Liu <haliu@redhat.com>
+Date:   Fri Sep 11 04:19:12 2020 -0400
+
+    [net] packet: make tp_drops atomic
+
+    Message-id: <20200911041913.2808606-2-haliu@redhat.com>
+    Patchwork-id: 326145
+    Patchwork-instance: patchwork
+    O-Subject: [CVE-2020-14386 RHEL8.3 net PATCH 1/2] net/packet: make tp_drops atomic
+    Bugzilla: 1876224
+    Z-Bugzilla: 1876223
+    CVE: CVE-2020-14386
+    RH-Acked-by: Davide Caratti <dcaratti@redhat.com>
+    RH-Acked-by: Marcelo Leitner <mleitner@redhat.com>
+    RH-Acked-by: Jarod Wilson <jarod@redhat.com>
+    RH-Acked-by: Paolo Abeni <pabeni@redhat.com>
+    RH-Acked-by: Ivan Vecera <ivecera@redhat.com>
+
+    Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1876224
+    Brew: https://brewweb.devel.redhat.com/taskinfo?taskID=31276277
+    Upstream Status: net.git commit 8e8e2951e309
+
+    commit 8e8e2951e3095732d7e780c241f61ea130955a57
+    Author: Eric Dumazet <edumazet@google.com>
+    Date:   Wed Jun 12 09:52:30 2019 -0700
+
+        net/packet: make tp_drops atomic
+
+        Under DDOS, we want to be able to increment tp_drops without
+        touching the spinlock. This will help readers to drain
+        the receive queue slightly faster :/
+
+        Signed-off-by: Eric Dumazet <edumazet@google.com>
+        Signed-off-by: David S. Miller <davem@davemloft.net>
+
+    Signed-off-by: Hangbin Liu <haliu@redhat.com>
+    Signed-off-by: Timothy Redaelli <tredaelli@redhat.com>
+    Signed-off-by: Bruno Meneguele <bmeneg@redhat.com>
+
+Acked-by: Joe Lawrence <joe.lawrence@redhat.com>
+Acked-by: Yannick Cote <ycote@redhat.com>
+Signed-off-by: Artem Savkov <asavkov@redhat.com>
+
+---
+ net/packet/af_packet.c | 118 ++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 106 insertions(+), 12 deletions(-)
+
+diff --git a/net/packet/af_packet.c b/net/packet/af_packet.c
+index d69fb2077196..4c67f7156a17 100644
+--- a/net/packet/af_packet.c
++++ b/net/packet/af_packet.c
+@@ -185,6 +185,8 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
+ #define BLOCK_O2PRIV(x)	((x)->offset_to_priv)
+ #define BLOCK_PRIV(x)		((void *)((char *)(x) + BLOCK_O2PRIV(x)))
+ 
++#define KLP_SHADOW_TP_DROPS 0x2020143860000000
++
+ struct packet_sock;
+ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
+ 		       struct packet_type *pt, struct net_device *orig_dev);
+@@ -747,6 +749,8 @@ static void prb_flush_block(struct tpacket_kbdq_core *pkc1,
+ #endif
+ }
+ 
++#include "kpatch-macros.h"
++
+ /*
+  * Side effect:
+  *
+@@ -765,8 +769,9 @@ static void prb_close_block(struct tpacket_kbdq_core *pkc1,
+ 	struct tpacket3_hdr *last_pkt;
+ 	struct tpacket_hdr_v1 *h1 = &pbd1->hdr.bh1;
+ 	struct sock *sk = &po->sk;
++	atomic_t *tp_drops = klp_shadow_get(po, KLP_SHADOW_TP_DROPS);
+ 
+-	if (po->stats.stats3.tp_drops)
++	if (tp_drops && atomic_read(tp_drops))
+ 		status |= TP_STATUS_LOSING;
+ 
+ 	last_pkt = (struct tpacket3_hdr *)pkc1->prev;
+@@ -1281,6 +1286,8 @@ static int packet_rcv_has_room(struct packet_sock *po, struct sk_buff *skb)
+ 
+ static void packet_sock_destruct(struct sock *sk)
+ {
++	struct packet_sock *po = pkt_sk(sk);
++
+ 	skb_queue_purge(&sk->sk_error_queue);
+ 
+ 	WARN_ON(atomic_read(&sk->sk_rmem_alloc));
+@@ -1291,6 +1298,8 @@ static void packet_sock_destruct(struct sock *sk)
+ 		return;
+ 	}
+ 
++	klp_shadow_free(po, KLP_SHADOW_TP_DROPS, NULL);
++
+ 	sk_refcnt_debug_dec(sk);
+ }
+ 
+@@ -1994,6 +2003,38 @@ static int packet_sendmsg_spkt(struct socket *sock, struct msghdr *msg,
+ 	return err;
+ }
+ 
++#define BPF_PROG_RUN_KPATCH(prog, ctx)	({				\
++	u32 ret;						\
++	cant_sleep();						\
++	if (static_key_enabled(&bpf_stats_enabled_key)) {	\
++		struct bpf_prog_stats *stats;			\
++		u64 start = sched_clock();			\
++		ret = (*(prog)->bpf_func)(ctx, (prog)->insnsi);	\
++		stats = this_cpu_ptr(prog->aux->stats);		\
++		u64_stats_update_begin(&stats->syncp);		\
++		stats->cnt++;					\
++		stats->nsecs += sched_clock() - start;		\
++		u64_stats_update_end(&stats->syncp);		\
++	} else {						\
++		ret = (*(prog)->bpf_func)(ctx, (prog)->insnsi);	\
++	}							\
++	ret; })
++
++static inline u32 bpf_prog_run_clear_cb_kpatch(const struct bpf_prog *prog,
++					struct sk_buff *skb)
++{
++	u8 *cb_data = bpf_skb_cb(skb);
++	u32 res;
++
++	if (unlikely(prog->cb_access))
++		memset(cb_data, 0, BPF_SKB_CB_LEN);
++
++	preempt_disable();
++	res = BPF_PROG_RUN_KPATCH(prog, skb);
++	preempt_enable();
++	return res;
++}
++
+ static unsigned int run_filter(struct sk_buff *skb,
+ 			       const struct sock *sk,
+ 			       unsigned int res)
+@@ -2003,7 +2044,7 @@ static unsigned int run_filter(struct sk_buff *skb,
+ 	rcu_read_lock();
+ 	filter = rcu_dereference(sk->sk_filter);
+ 	if (filter != NULL)
+-		res = bpf_prog_run_clear_cb(filter->prog, skb);
++		res = bpf_prog_run_clear_cb_kpatch(filter->prog, skb);
+ 	rcu_read_unlock();
+ 
+ 	return res;
+@@ -2046,6 +2087,7 @@ static int packet_rcv(struct sk_buff *skb, struct net_device *dev,
+ 	int skb_len = skb->len;
+ 	unsigned int snaplen, res;
+ 	bool is_drop_n_account = false;
++	atomic_t *tp_drops;
+ 
+ 	if (skb->pkt_type == PACKET_LOOPBACK)
+ 		goto drop;
+@@ -2053,6 +2095,17 @@ static int packet_rcv(struct sk_buff *skb, struct net_device *dev,
+ 	sk = pt->af_packet_priv;
+ 	po = pkt_sk(sk);
+ 
++	tp_drops = klp_shadow_get(po, KLP_SHADOW_TP_DROPS);
++	if (!tp_drops) {
++		tp_drops = klp_shadow_alloc(po, KLP_SHADOW_TP_DROPS,
++					    sizeof(atomic_t*), GFP_ATOMIC,
++					    NULL, NULL);
++		if (!tp_drops)
++			goto drop;
++
++		atomic_set(tp_drops, po->stats.stats1.tp_drops);
++	}
++
+ 	if (!net_eq(dev_net(dev), sock_net(sk)))
+ 		goto drop;
+ 
+@@ -2135,10 +2188,8 @@ static int packet_rcv(struct sk_buff *skb, struct net_device *dev,
+ 
+ drop_n_acct:
+ 	is_drop_n_account = true;
+-	spin_lock(&sk->sk_receive_queue.lock);
+-	po->stats.stats1.tp_drops++;
++	atomic_inc(tp_drops);
+ 	atomic_inc(&sk->sk_drops);
+-	spin_unlock(&sk->sk_receive_queue.lock);
+ 
+ drop_n_restore:
+ 	if (skb_head != skb->data && skb_shared(skb)) {
+@@ -2164,12 +2215,14 @@ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
+ 	int skb_len = skb->len;
+ 	unsigned int snaplen, res;
+ 	unsigned long status = TP_STATUS_USER;
+-	unsigned short macoff, netoff, hdrlen;
++	unsigned short macoff, hdrlen;
++	unsigned int netoff;
+ 	struct sk_buff *copy_skb = NULL;
+ 	struct timespec ts;
+ 	__u32 ts_status;
+ 	bool is_drop_n_account = false;
+ 	bool do_vnet = false;
++	atomic_t *tp_drops;
+ 
+ 	/* struct tpacket{2,3}_hdr is aligned to a multiple of TPACKET_ALIGNMENT.
+ 	 * We may add members to them until current aligned size without forcing
+@@ -2184,6 +2237,17 @@ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
+ 	sk = pt->af_packet_priv;
+ 	po = pkt_sk(sk);
+ 
++	tp_drops = klp_shadow_get(po, KLP_SHADOW_TP_DROPS);
++	if (!tp_drops) {
++		tp_drops = klp_shadow_alloc(po, KLP_SHADOW_TP_DROPS,
++					    sizeof(atomic_t*), GFP_ATOMIC,
++					    NULL, NULL);
++		if (!tp_drops)
++			goto drop;
++
++		atomic_set(tp_drops, po->stats.stats1.tp_drops);
++	}
++
+ 	if (!net_eq(dev_net(dev), sock_net(sk)))
+ 		goto drop;
+ 
+@@ -2226,6 +2290,10 @@ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
+ 		}
+ 		macoff = netoff - maclen;
+ 	}
++	if (netoff > USHRT_MAX) {
++		atomic_inc(tp_drops);
++		goto drop_n_restore;
++	}
+ 	if (po->tp_version <= TPACKET_V2) {
+ 		if (macoff + snaplen > po->rx_ring.frame_size) {
+ 			if (po->copy_thresh &&
+@@ -2272,7 +2340,7 @@ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
+ 	 * Anyways, moving it for V1/V2 only as V3 doesn't need this
+ 	 * at packet level.
+ 	 */
+-		if (po->stats.stats1.tp_drops)
++		if (atomic_read(tp_drops))
+ 			status |= TP_STATUS_LOSING;
+ 	}
+ 
+@@ -2388,9 +2456,9 @@ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
+ 	return 0;
+ 
+ drop_n_account:
+-	is_drop_n_account = true;
+-	po->stats.stats1.tp_drops++;
+ 	spin_unlock(&sk->sk_receive_queue.lock);
++	atomic_inc(tp_drops);
++	is_drop_n_account = true;
+ 
+ 	sk->sk_data_ready(sk);
+ 	kfree_skb(copy_skb);
+@@ -3195,6 +3263,7 @@ static int packet_create(struct net *net, struct socket *sock, int protocol,
+ 	struct sock *sk;
+ 	struct packet_sock *po;
+ 	__be16 proto = (__force __be16)protocol; /* weird, but documented */
++	atomic_t *tp_drops;
+ 	int err;
+ 
+ 	if (!ns_capable(net->user_ns, CAP_NET_RAW))
+@@ -3221,9 +3290,16 @@ static int packet_create(struct net *net, struct socket *sock, int protocol,
+ 	po->num = proto;
+ 	po->xmit = dev_queue_xmit;
+ 
++	tp_drops = klp_shadow_get_or_alloc(po, KLP_SHADOW_TP_DROPS,
++					   sizeof(atomic_t*), GFP_KERNEL,
++					   NULL, NULL);
++
++	if (!tp_drops)
++		goto out2;
++
+ 	err = packet_alloc_pending(po);
+ 	if (err)
+-		goto out2;
++		goto out3;
+ 
+ 	packet_cached_dev_reset(po);
+ 
+@@ -3258,6 +3334,8 @@ static int packet_create(struct net *net, struct socket *sock, int protocol,
+ 	preempt_enable();
+ 
+ 	return 0;
++out3:
++	klp_shadow_free(po, KLP_SHADOW_TP_DROPS, NULL);
+ out2:
+ 	sk_free(sk);
+ out:
+@@ -3873,6 +3951,8 @@ static int packet_getsockopt(struct socket *sock, int level, int optname,
+ 	void *data = &val;
+ 	union tpacket_stats_u st;
+ 	struct tpacket_rollover_stats rstats;
++	int drops;
++	atomic_t *tp_drops;
+ 
+ 	if (level != SOL_PACKET)
+ 		return -ENOPROTOOPT;
+@@ -3883,20 +3963,34 @@ static int packet_getsockopt(struct socket *sock, int level, int optname,
+ 	if (len < 0)
+ 		return -EINVAL;
+ 
++	tp_drops = klp_shadow_get(po, KLP_SHADOW_TP_DROPS);
++	if (!tp_drops) {
++		tp_drops = klp_shadow_alloc(po, KLP_SHADOW_TP_DROPS,
++					    sizeof(atomic_t*), GFP_ATOMIC,
++					    NULL, NULL);
++		if (!tp_drops)
++			return -ENOMEM;
++
++		atomic_set(tp_drops, po->stats.stats1.tp_drops);
++	}
++
+ 	switch (optname) {
+ 	case PACKET_STATISTICS:
+ 		spin_lock_bh(&sk->sk_receive_queue.lock);
+ 		memcpy(&st, &po->stats, sizeof(st));
+ 		memset(&po->stats, 0, sizeof(po->stats));
+ 		spin_unlock_bh(&sk->sk_receive_queue.lock);
++		drops = atomic_xchg(tp_drops, 0);
+ 
+ 		if (po->tp_version == TPACKET_V3) {
+ 			lv = sizeof(struct tpacket_stats_v3);
+-			st.stats3.tp_packets += st.stats3.tp_drops;
++			st.stats3.tp_drops = drops;
++			st.stats3.tp_packets += drops;
+ 			data = &st.stats3;
+ 		} else {
+ 			lv = sizeof(struct tpacket_stats);
+-			st.stats1.tp_packets += st.stats1.tp_drops;
++			st.stats1.tp_drops = drops;
++			st.stats1.tp_packets += drops;
+ 			data = &st.stats1;
+ 		}
+ 
+-- 
+2.26.2
+

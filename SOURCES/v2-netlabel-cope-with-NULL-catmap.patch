@@ -1,0 +1,79 @@
+From 2bb0627a9730d7ff6f3c7c7d09e5318b00d2edf1 Mon Sep 17 00:00:00 2001
+From: Joe Lawrence <joe.lawrence@redhat.com>
+Date: Mon, 11 May 2020 16:59:29 -0400
+Subject: [PATCH v2] netlabel: cope with NULL catmap
+
+Kernels:
+4.18.0-193.el8
+
+Changes since last build:
+arches: x86_64 ppc64le
+
+---------------------------
+
+Modifications:
+- For minimal kpatch fix, update netlbl_catmap_getlong() to avoid NULL
+  pointetr dereference (suggested by Paolo).
+- Add kpatch-build avoidance for ppc64le leaf functions (mcount calls
+  not replaced by nops).
+
+(embargoed patch from rhkernel-team-list)
+Author: Paolo Abeni <pabeni@redhat.com>
+Date:   Wed May 6 16:36:19 2020 +0200
+
+    netlabel: cope with NULL catmap
+
+    Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1827251
+    Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=28403086
+    Tested: vs bz repro
+    CVE: CVE-2020-10711
+    Upstream status: RHEL-only
+
+    The cipso and calipso code can set the MLS_CAT attribute on
+    successful parsing, even if the corresponding catmap has
+    not be allocated, as per current configuration and external
+    input.
+
+    Later, selinux code tries tp access the catmap if the MLS_CAT flag
+    is present via netlbl_catmap_getlong(). That may cause null ptr
+    dereference while processing incoming network traffic.
+
+    Address the issue setting the MLS_CAT flag only if the catmap is
+    really allocated. Additionally let netlbl_catmap_getlong() cope
+    with NULL catmap
+
+    Fixes: 4b8feff251da ("netlabel: fix the horribly broken catmap functions")
+    Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+
+Signed-off-by: Joe Lawrence <joe.lawrence@redhat.com>
+---
+
+Accompanying the kpatch will be a change to update kpatch.spec with a
+v2-patch filename and .gitignore / sources updates to reflect the new
+patch name.
+
+ net/netlabel/netlabel_kapi.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/net/netlabel/netlabel_kapi.c b/net/netlabel/netlabel_kapi.c
+index ee3e5b6471a6..93807c049a5b 100644
+--- a/net/netlabel/netlabel_kapi.c
++++ b/net/netlabel/netlabel_kapi.c
+@@ -748,6 +748,14 @@ int netlbl_catmap_getlong(struct netlbl_lsm_catmap *catmap,
+ 	if ((off & (BITS_PER_LONG - 1)) != 0)
+ 		return -EINVAL;
+ 
++	/* a null catmap is equivalent to an empty one */
++	if (!catmap) {
++		if (jiffies == 0)
++			pr_debug("workaround for kpatch ppc64le leaf function\n");
++		*offset = (u32)-1;
++		return 0;
++	}
++
+ 	if (off < catmap->startbit) {
+ 		off = catmap->startbit;
+ 		*offset = off;
+-- 
+2.21.3
+
