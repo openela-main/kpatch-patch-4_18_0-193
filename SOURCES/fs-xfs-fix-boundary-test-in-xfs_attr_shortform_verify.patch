@@ -1,0 +1,111 @@
+From 1fab7a4d22151968645c995bc62580f40ae566ce Mon Sep 17 00:00:00 2001
+From: Julien Thierry <jthierry@redhat.com>
+Date: Fri, 2 Oct 2020 15:10:31 +0100
+Subject: [RHEL8.2 KPATCH] [fs] xfs: fix boundary test in xfs_attr_shortform_verify
+
+Kernels:
+4.18.0-193.el8
+4.18.0-193.1.2.el8_2
+4.18.0-193.6.3.el8_2
+4.18.0-193.13.2.el8_2
+4.18.0-193.14.3.el8_2
+4.18.0-193.19.1.el8_2
+
+Changes since last build:
+[x86_64]:
+af_packet.o: changed function: packet_create
+af_packet.o: changed function: packet_getsockopt
+af_packet.o: changed function: packet_rcv
+af_packet.o: changed function: packet_sock_destruct
+af_packet.o: changed function: prb_retire_current_block
+af_packet.o: changed function: tpacket_rcv
+xfs_attr_leaf.o: changed function: xfs_attr_shortform_verify
+
+[ppc64le]:
+af_packet.o: changed function: packet_create
+af_packet.o: changed function: packet_getsockopt
+af_packet.o: changed function: packet_rcv
+af_packet.o: changed function: packet_sock_destruct
+af_packet.o: changed function: prb_retire_current_block
+af_packet.o: changed function: run_filter
+af_packet.o: changed function: tpacket_rcv
+xfs_attr_leaf.o: changed function: xfs_attr_shortform_verify
+
+---------------------------
+
+Modifications:
+None
+
+Testing: tried the commands in the commit message before and after the
+kpatch-patch. Without the kpatch-patch, the filesystem dies.
+
+commit def0a18dc3b157ec347f018c1b367d8e4825dfca
+Author: Eric Sandeen <sandeen@redhat.com>
+Date:   Thu Sep 10 16:10:27 2020 -0300
+
+    [fs] xfs: fix boundary test in xfs_attr_shortform_verify
+
+    Message-id: <5f3f90ef-7bec-6c66-8567-a2eb0a71a63c@redhat.com>
+    Patchwork-id: 326142
+    Patchwork-instance: patchwork
+    O-Subject: [PATCH RHEL8.3] xfs: fix boundary test in xfs_attr_shortform_verify
+    Bugzilla: 1875316
+    Z-Bugzilla: 1881085
+    CVE: CVE-2020-14385
+    RH-Acked-by: Brian Foster <bfoster@redhat.com>
+    RH-Acked-by: Vladis Dronov <vdronov@redhat.com>
+
+    Bugzilla: 1875316
+    Upstream Status: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/
+    Build Info: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=31249120
+    Tested: With simple reproducer in commit + xfstests
+    CVE: CVE-2020-14385
+
+    The boundary test for the fixed-offset parts of xfs_attr_sf_entry in
+    xfs_attr_shortform_verify is off by one, because the variable array
+    at the end is defined as nameval[1] not nameval[].
+    Hence we need to subtract 1 from the calculation.
+
+    This can be shown by:
+
+    # touch file
+    # setfattr -n root.a file
+
+    and verifications will fail when it's written to disk.
+
+    This only matters for a last attribute which has a single-byte name
+    and no value, otherwise the combination of namelen & valuelen will
+    push endp further out and this test won't fail.
+
+    Fixes: 1e1bbd8e7ee06 ("xfs: create structure verifier function for shortform xattrs")
+    Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+    Reviewed-by: Darrick J. Wong <darrick.wong@oracle.com>
+    Signed-off-by: Darrick J. Wong <darrick.wong@oracle.com>
+    Reviewed-by: Christoph Hellwig <hch@lst.de>
+    (cherry picked from commit f4020438fab05364018c91f7e02ebdd192085933)
+    Signed-off-by: Eric Sandeen <sandeen@redhat.com>
+    Signed-off-by: Bruno Meneguele <bmeneg@redhat.com>
+
+Signed-off-by: Julien Thierry <jthierry@redhat.com>
+---
+ fs/xfs/libxfs/xfs_attr_leaf.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/xfs/libxfs/xfs_attr_leaf.c b/fs/xfs/libxfs/xfs_attr_leaf.c
+index cbcc400f7634..7dbca5a14a90 100644
+--- a/fs/xfs/libxfs/xfs_attr_leaf.c
++++ b/fs/xfs/libxfs/xfs_attr_leaf.c
+@@ -949,8 +949,10 @@ xfs_attr_shortform_verify(
+ 		 * struct xfs_attr_sf_entry has a variable length.
+ 		 * Check the fixed-offset parts of the structure are
+ 		 * within the data buffer.
++		 * xfs_attr_sf_entry is defined with a 1-byte variable
++		 * array at the end, so we must subtract that off.
+ 		 */
+-		if (((char *)sfep + sizeof(*sfep)) >= endp)
++		if (((char *)sfep + sizeof(*sfep) - 1) >= endp)
+ 			return __this_address;
+
+ 		/* Don't allow names with known bad length. */
+--
+2.25.4
